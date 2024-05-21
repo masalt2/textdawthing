@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text-based Music Maker</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+  }
+  .flex-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+  .container {
+    width: 45%;
+  }
+  textarea {
+    width: 100%;
+    height: 150px;
+    resize: none;
+  }
+  .file-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .buttons {
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Text-based Music Maker</h2>
+<label for="projectName">Project Name:</label>
+<input type="text" id="projectName" placeholder="Enter project name">
+
+<div class="flex-container">
+  <div class="container">
+    <h3>Melody</h3>
+    <textarea id="musicInput" placeholder="Enter your music markup here..."></textarea>
+    <label for="soundType">Default Sound Type:</label>
+    <select id="soundType">
+      <option value="sine">Sine</option>
+      <option value="square">Square</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="triangle">Triangle</option>
+    </select>
+  </div>
+  <div class="container">
+    <h3>Drum Loop</h3>
+    <textarea id="drumInput" placeholder="Enter your drum pattern here (e.g., 'kick-0.5' for a beat)..."></textarea>
+  </div>
+</div>
+
+<div class="container">
+  <h3>Custom Sounds</h3>
+  <div class="file-container">
+    <input type="file" id="customSoundInput1" multiple>
+    <input type="file" id="customSoundInput2" multiple>
+    <input type="file" id="customSoundInput3" multiple>
+  </div>
+</div>
+
+<div class="buttons">
+  <button onclick="playMusic()">Play</button>
+  <button onclick="stopMusic()">Stop</button>
+  <button onclick="exportWav()">Export as .wav</button>
+  <button onclick="saveProject()">Save Project</button>
+  <input type="file" id="importProject" style="display: none;" onchange="importProject(this.files)">
+  <button onclick="document.getElementById('importProject').click()">Import Project</button>
+</div>
+
+<script>
+let customSounds = {};
+let audioCtx;
+
+document.getElementById('customSoundInput1').addEventListener('change', handleFileUpload);
+document.getElementById('customSoundInput2').addEventListener('change', handleFileUpload);
+document.getElementById('customSoundInput3').addEventListener('change', handleFileUpload);
+
+function handleFileUpload(event) {
+  const files = event.target.files;
+  for (let file of files) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.decodeAudioData(e.target.result, function(buffer) {
+        customSounds[file.name] = buffer;
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function playMusic() {
+  if (audioCtx) audioCtx.close(); // close any previous audio context
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  var musicMarkup = document.getElementById("musicInput").value.replace(/\n/g, " ").trim();
+  var drumMarkup = document.getElementById("drumInput").value.replace(/\n/g, " ").trim();
+  var time = audioCtx.currentTime;
+  var notes = musicMarkup.split(" ").filter(note => note.trim() !== '');
+  var drumNotes = drumMarkup.split(" ").filter(note => note.trim() !== '');
+  var soundType = document.getElementById("soundType").value;
+
+  // Play melody
+  for (var i = 0; i < notes.length; i++) {
+    var chordNotes = notes[i].toUpperCase().split(",");
+    for (var j = 0; j < chordNotes.length; j++) {
+      var noteInfo = chordNotes[j].split("-");
+      var noteName = noteInfo[0].substring(0, 1);
+      var octave = parseInt(noteInfo[0].substring(1)) || 4; // default to octave 4 if not specified
+      var duration = parseFloat(noteInfo[1]) || 0.5; // default to 0.5 seconds if not specified
+      var noteSoundType = noteInfo[2] || soundType;
+      var frequency = calculateFrequency(noteName, octave);
+      playNote(audioCtx, frequency, time, duration, noteSoundType);
+    }
+    time += duration; // advance time by the specified duration for each chord
+  }
+
+  // Play drum loop
+  var drumTime = audioCtx.currentTime;
+  for (var k = 0; k < drumNotes.length; k++) {
+    var drumInfo = drumNotes[k].split("-");
+    var drumName = drumInfo[0].toLowerCase();
+    var drumDuration = parseFloat(drumInfo[1]) || 0.5; // default to 0.5 seconds if not specified
+    if (drumName === "kick") {
+      playKick(audioCtx, drumTime, drumDuration);
+    } else if (customSounds[drumName]) {
+      playCustomSound(audioCtx, customSounds[drumName], drumTime, drumDuration);
+    }
+    drumTime += drumDuration; // advance time by the specified duration for each drum beat
+  }
+}
+
+function stopMusic() {
+  if (audioCtx) audioCtx.close();
+}
+
+function calculateFrequency(noteName, octave) {
+  var noteFrequencies = {
+    'C': 261.63,
+    'D': 293.66,
+    'E': 329.63,
+    'F': 349.23,
+    'G': 392.00,
+    'A': 440.00,
+    'B': 493.88
+  };
+  if (noteFrequencies[noteName]) {
+    return noteFrequencies[noteName] * Math.pow(2, octave - 4);
+  } else {
+    return 0; // Return 0 frequency for unknown notes
+  }
+}
+
+function playNote(audioCtx, frequency, startTime, duration, soundType) {
+  var oscillator = audioCtx.createOscillator();
+  oscillator.type = soundType;
+  oscillator.frequency.setValueAtTime(frequency, startTime);
+  oscillator.connect(audioCtx.destination);
+  oscillator.start(startTime);
+  oscillator.stop(startTime + duration); // play each note for the specified duration
+}
+
+function playKick(audioCtx, startTime, duration) {
+  var oscillator = audioCtx.createOscillator();
+  var gainNode = audioCtx.createGain();
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(150, startTime);
+  oscillator.frequency.exponentialRampToValueAtTime(0.01, startTime + duration);
+  gainNode.gain.setValueAtTime(1, startTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+  oscillator.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  oscillator.start(startTime);
+  oscillator.stop(startTime + duration); // play each drum beat for the specified duration
+}
+
+function playCustomSound(audioCtx, buffer, startTime, duration) {
+  var source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start(startTime);
+  source.stop(startTime + duration); // stop custom sound after the specified duration
+}
+
+function saveProject() {
+  const projectName = document.getElementById("projectName").value || "project";
+  const musicMarkup = document.getElementById("musicInput").value;
+  const drumMarkup = document.getElementById("drumInput").value;
+  const project = {
+    musicMarkup,
+    drumMarkup,
+    soundType: document.getElementById("soundType").value,
+    customSounds: {}
+  };
+  
+  for (const sound in customSounds) {
+    project.customSounds[sound] = customSounds[sound];
+  }
+
+  const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${projectName}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function importProject(files) {
+  const file = files[0];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const project = JSON.parse(e.target.result);
+    document.getElementById("projectName").value = file.name.replace('.json', '');
+    document.getElementById("musicInput").value = project.musicMarkup;
+    document.getElementById("drumInput").value = project.drumMarkup;
+    document.getElementById("soundType").value = project.soundType;
+    customSounds = project.customSounds;
+  };
+  reader.readAsText(file);
+}
+
+function exportWav() {
+  const projectName = document.getElementById("projectName").value || "music";
+  var musicMarkup = document.getElementById("musicInput").value.replace(/\n/g, " ").trim();
+  var drumMarkup = document.getElementById("drumInput").value.replace(/\n/g, " ").trim();
+  var offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 44100 * 40, 44100); // 40 seconds buffer
+  var time = 0;
+  var notes = musicMarkup.split(" ").filter(note => note.trim() !== '');
+  var drumNotes = drumMarkup.split(" ").filter(note => note.trim() !== '');
+  var soundType = document.getElementById("soundType").value;
+
+  // Play melody
+  for (var i = 0; i < notes.length; i++) {
+    var chordNotes = notes[i].toUpperCase().split(",");
+    for (var j = 0; j < chordNotes.length; j++) {
+      var noteInfo = chordNotes[j].split("-");
+      var noteName = noteInfo[0].substring(0, 1);
+      var octave = parseInt(noteInfo[0].substring(1)) || 4; // default to octave 4 if not specified
+      var duration = parseFloat(noteInfo[1]) || 0.5; // default to 0.5 seconds if not specified
+      var noteSoundType = noteInfo[2] || soundType;
+      var frequency = calculateFrequency(noteName, octave);
+      playNote(offlineCtx, frequency, time, duration, noteSoundType);
+    }
+    time += duration; // advance time by the specified duration for each chord
+  }
+
+  // Play drum loop
+  var drumTime = 0;
+  for (var k = 0; k < drumNotes.length; k++) {
+    var drumInfo = drumNotes[k].split("-");
+    var drumName = drumInfo[0].toLowerCase();
+    var drumDuration = parseFloat(drumInfo[1]) || 0.5; // default to 0.5 seconds if not specified
+    if (drumName === "kick") {
+      playKick(offlineCtx, drumTime, drumDuration);
+    } else if (customSounds[drumName]) {
+      playCustomSound(offlineCtx, customSounds[drumName], drumTime, drumDuration);
+    }
+    drumTime += drumDuration; // advance time by the specified duration for each drum beat
+  }
+
+  offlineCtx.startRendering().then(function(renderedBuffer) {
+    var wavData = audioBufferToWav(renderedBuffer);
+    var blob = new Blob([wavData], { type: 'audio/wav' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = `${projectName}.wav`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  });
+}
+
+function audioBufferToWav(buffer) {
+  let numOfChan = buffer.numberOfChannels,
+    length = buffer.length * numOfChan * 2 + 44,
+    buffer2 = new ArrayBuffer(length),
+    view = new DataView(buffer2),
+    channels = [],
+    i,
+    sample,
+    offset = 0,
+    pos = 0;
+
+  setUint32(0x46464952); // "RIFF"
+  setUint32(length - 8); // file length - 8
+  setUint32(0x45564157); // "WAVE"
+
+  setUint32(0x20746d66); // "fmt " chunk
+  setUint32(16); // length = 16
+  setUint16(1); // PCM (uncompressed)
+  setUint16(numOfChan);
+  setUint32(buffer.sampleRate);
+  setUint32(buffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+  setUint16(numOfChan * 2); // block-align
+  setUint16(16); // 16-bit (hardcoded in this demo)
+
+  setUint32(0x61746164); // "data" - chunk
+  setUint32(length - pos - 4); // chunk length
+
+  // write interleaved data
+  for (i = 0; i < buffer.numberOfChannels; i++) channels.push(buffer.getChannelData(i));
+
+  while (pos < length) {
+    for (i = 0; i < numOfChan; i++) {
+      // interleave channels
+      sample = Math.max(-1, Math.min(1, channels[i][offset])); // clamp
+      sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0; // scale to 16-bit signed int
+      view.setInt16(pos, sample, true); // write 16-bit sample
+      pos += 2;
+    }
+    offset++; // next source sample
+  }
+
+  return buffer2;
+
+  function setUint16(data) {
+    view.setUint16(pos, data, true);
+    pos += 2;
+  }
+
+  function setUint32(data) {
+    view.setUint32(pos, data, true);
+    pos += 4;
+  }
+}
+</script>
+
+</body>
+</html>
